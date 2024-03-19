@@ -90,6 +90,9 @@ void InstanceSettingsPage::globalSettingsButtonClicked(bool)
         case 2:
             APPLICATION->ShowGlobalSettings(this, "custom-commands");
             return;
+        case 3:
+            APPLICATION->ShowGlobalSettings(this, "environment-variables");
+            return;
         default:
             APPLICATION->ShowGlobalSettings(this, "minecraft-settings");
             return;
@@ -199,6 +202,14 @@ void InstanceSettingsPage::applySettings()
         m_settings->reset("PostExitCommand");
     }
 
+    // Environment Variables
+    auto env = ui->environmentVariables->override();
+    m_settings->set("OverrideEnv", env);
+    if (env)
+        m_settings->set("Env", ui->environmentVariables->value());
+    else
+        m_settings->reset("Env");
+
     // Workarounds
     bool workarounds = ui->nativeWorkaroundsGroupBox->isChecked();
     m_settings->set("OverrideNativeWorkarounds", workarounds);
@@ -221,10 +232,13 @@ void InstanceSettingsPage::applySettings()
         m_settings->set("EnableFeralGamemode", ui->enableFeralGamemodeCheck->isChecked());
         m_settings->set("EnableMangoHud", ui->enableMangoHud->isChecked());
         m_settings->set("UseDiscreteGpu", ui->useDiscreteGpuCheck->isChecked());
+        m_settings->set("UseZink", ui->useZink->isChecked());
+
     } else {
         m_settings->reset("EnableFeralGamemode");
         m_settings->reset("EnableMangoHud");
         m_settings->reset("UseDiscreteGpu");
+        m_settings->reset("UseZink");
     }
 
     // Game time
@@ -318,6 +332,9 @@ void InstanceSettingsPage::loadSettings()
     ui->customCommands->initialize(true, m_settings->get("OverrideCommands").toBool(), m_settings->get("PreLaunchCommand").toString(),
                                    m_settings->get("WrapperCommand").toString(), m_settings->get("PostExitCommand").toString());
 
+    // Environment variables
+    ui->environmentVariables->initialize(true, m_settings->get("OverrideEnv").toBool(), m_settings->get("Env").toMap());
+
     // Workarounds
     ui->nativeWorkaroundsGroupBox->setChecked(m_settings->get("OverrideNativeWorkarounds").toBool());
     ui->useNativeGLFWCheck->setChecked(m_settings->get("UseNativeGLFW").toBool());
@@ -332,7 +349,7 @@ void InstanceSettingsPage::loadSettings()
 #ifdef Q_OS_LINUX
     ui->lineEditOpenALPath->setPlaceholderText(APPLICATION->m_detectedOpenALPath);
 #else
-    ui->lineEditGLFWPath->setPlaceholderText(tr("Path to %1 library file").arg(BuildConfig.OPENAL_LIBRARY_NAME));
+    ui->lineEditOpenALPath->setPlaceholderText(tr("Path to %1 library file").arg(BuildConfig.OPENAL_LIBRARY_NAME));
 #endif
 
     // Performance
@@ -340,6 +357,7 @@ void InstanceSettingsPage::loadSettings()
     ui->enableFeralGamemodeCheck->setChecked(m_settings->get("EnableFeralGamemode").toBool());
     ui->enableMangoHud->setChecked(m_settings->get("EnableMangoHud").toBool());
     ui->useDiscreteGpuCheck->setChecked(m_settings->get("UseDiscreteGpu").toBool());
+    ui->useZink->setChecked(m_settings->get("UseZink").toBool());
 
 #if !defined(Q_OS_LINUX)
     ui->settingsTabs->setTabVisible(ui->settingsTabs->indexOf(ui->performancePage), false);
@@ -484,6 +502,7 @@ void InstanceSettingsPage::retranslate()
 {
     ui->retranslateUi(this);
     ui->customCommands->retranslate();  // TODO: why is this seperate from the others?
+    ui->environmentVariables->retranslate();
 }
 
 void InstanceSettingsPage::updateThresholds()

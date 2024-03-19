@@ -50,7 +50,7 @@
 
 namespace MMCZip {
 // ours
-bool mergeZipFiles(QuaZip* into, QFileInfo from, QSet<QString>& contained, const FilterFunction filter)
+bool mergeZipFiles(QuaZip* into, QFileInfo from, QSet<QString>& contained, const FilterFunction& filter)
 {
     QuaZip modZip(from.filePath());
     modZip.open(QuaZip::mdUnzip);
@@ -463,7 +463,7 @@ auto ExportToZipTask::exportZip() -> ZipResult
 
         auto absolute = file.absoluteFilePath();
         auto relative = m_dir.relativeFilePath(absolute);
-        setStatus("Compresing: " + relative);
+        setStatus("Compressing: " + relative);
         setProgress(m_progress + 1, m_progressTotal);
         if (m_follow_symlinks) {
             if (file.isSymLink())

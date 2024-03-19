@@ -173,11 +173,12 @@ void MinecraftInstance::loadSpecificSettings()
         m_settings->registerOverride(global_settings->getSetting("UseNativeGLFW"), nativeLibraryWorkaroundsOverride);
         m_settings->registerOverride(global_settings->getSetting("CustomGLFWPath"), nativeLibraryWorkaroundsOverride);
 
-        // Peformance related options
+        // Performance related options
         auto performanceOverride = m_settings->registerSetting("OverridePerformance", false);
         m_settings->registerOverride(global_settings->getSetting("EnableFeralGamemode"), performanceOverride);
         m_settings->registerOverride(global_settings->getSetting("EnableMangoHud"), performanceOverride);
         m_settings->registerOverride(global_settings->getSetting("UseDiscreteGpu"), performanceOverride);
+        m_settings->registerOverride(global_settings->getSetting("UseZink"), performanceOverride);
 
         // Miscellaneous
         auto miscellaneousOverride = m_settings->registerSetting("OverrideMiscellaneous", false);
@@ -187,6 +188,9 @@ void MinecraftInstance::loadSpecificSettings()
         // Legacy-related options
         auto legacySettings = m_settings->registerSetting("OverrideLegacySettings", false);
         m_settings->registerOverride(global_settings->getSetting("OnlineFixes"), legacySettings);
+
+        auto envSetting = m_settings->registerSetting("OverrideEnv", false);
+        m_settings->registerOverride(global_settings->getSetting("Env"), envSetting);
 
         m_settings->set("InstanceType", "OneSix");
     }
@@ -289,10 +293,10 @@ QString MinecraftInstance::gameRoot() const
     QFileInfo mcDir(FS::PathCombine(instanceRoot(), "minecraft"));
     QFileInfo dotMCDir(FS::PathCombine(instanceRoot(), ".minecraft"));
 
-    if (mcDir.exists() && !dotMCDir.exists())
-        return mcDir.filePath();
-    else
+    if (dotMCDir.exists() && !mcDir.exists())
         return dotMCDir.filePath();
+    else
+        return mcDir.filePath();
 }
 
 QString MinecraftInstance::binRoot() const
@@ -548,6 +552,7 @@ QMap<QString, QString> MinecraftInstance::getVariables()
     out.insert("INST_MC_DIR", QDir::toNativeSeparators(QDir(gameRoot()).absolutePath()));
     out.insert("INST_JAVA", settings()->get("JavaPath").toString());
     out.insert("INST_JAVA_ARGS", javaArguments().join(' '));
+    out.insert("NO_COLOR", "1");
     return out;
 }
 
@@ -561,6 +566,22 @@ QProcessEnvironment MinecraftInstance::createEnvironment()
     for (auto it = variables.begin(); it != variables.end(); ++it) {
         env.insert(it.key(), it.value());
     }
+    // custom env
+
+    auto insertEnv = [&env](QMap<QString, QVariant> envMap) {
+        if (envMap.isEmpty())
+            return;
+
+        for (auto iter = envMap.begin(); iter != envMap.end(); iter++)
+            env.insert(iter.key(), iter.value().toString());
+    };
+
+    bool overrideEnv = settings()->get("OverrideEnv").toBool();
+
+    if (!overrideEnv)
+        insertEnv(APPLICATION->settings()->get("Env").toMap());
+    else
+        insertEnv(settings()->get("Env").toMap());
     return env;
 }
 
@@ -571,20 +592,26 @@ QProcessEnvironment MinecraftInstance::createLaunchEnvironment()
 
 #ifdef Q_OS_LINUX
     if (settings()->get("EnableMangoHud").toBool() && APPLICATION->capabilities() & Application::SupportsMangoHud) {
-        auto preloadList = env.value("LD_PRELOAD").split(QLatin1String(":"));
-        auto libPaths = env.value("LD_LIBRARY_PATH").split(QLatin1String(":"));
+        QStringList preloadList;
+        if (auto value = env.value("LD_PRELOAD"); !value.isEmpty())
+            preloadList = value.split(QLatin1String(":"));
 
         auto mangoHudLibString = MangoHud::getLibraryString();
         if (!mangoHudLibString.isEmpty()) {
             QFileInfo mangoHudLib(mangoHudLibString);
+            QString libPath = mangoHudLib.absolutePath();
+            auto appendLib = [libPath, &preloadList](QString fileName) {
+                if (QFileInfo(FS::PathCombine(libPath, fileName)).exists())
+                    preloadList << FS::PathCombine(libPath, fileName);
+            };
 
             // dlsym variant is only needed for OpenGL and not included in the vulkan layer
-            preloadList << "libMangoHud_dlsym.so" << mangoHudLib.fileName();
-            libPaths << mangoHudLib.absolutePath();
+            appendLib("libMangoHud_dlsym.so");
+            appendLib("libMangoHud_opengl.so");
+            appendLib(mangoHudLib.fileName());
         }
 
         env.insert("LD_PRELOAD", preloadList.join(QLatin1String(":")));
-        env.insert("LD_LIBRARY_PATH", libPaths.join(QLatin1String(":")));
         env.insert("MANGOHUD", "1");
     }
 
@@ -596,8 +623,14 @@ QProcessEnvironment MinecraftInstance::createLaunchEnvironment()
         env.insert("__VK_LAYER_NV_optimus", "NVIDIA_only");
         env.insert("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
     }
-#endif
 
+    if (settings()->get("UseZink").toBool()) {
+        // taken from https://wiki.archlinux.org/title/OpenGL#OpenGL_over_Vulkan_(Zink)
+        env.insert("__GLX_VENDOR_LIBRARY_NAME", "mesa");
+        env.insert("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+        env.insert("GALLIUM_DRIVER", "zink");
+    }
+#endif
     return env;
 }
 
